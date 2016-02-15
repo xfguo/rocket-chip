@@ -5,6 +5,7 @@ package rocketchip
 import Chisel._
 import cde.Parameters
 import junctions._
+import junctions.PeripheralConsts._
 import uncore._
 
 class MemDessert(topParams: Parameters) extends Module {
@@ -66,12 +67,15 @@ object VLSIUtils {
   }
 
   def padOutHTIFWithDividedClock(
-      htif: HostIO,
       scr: SCRIO,
+      htif: HostIO,
+      host: HostIO,
+      htifW: Int,
       child: MemSerializedIO, 
       parent: MemBackupCtrlIO,
-      host: HostIO,
-      htifW: Int) {
+      bdev_inner: BlockDeviceIO,
+      bdev_outer: BlockDeviceIO) {
+
     val hio = Module((new SlowIO(512)) { Bits(width = htifW+1) })
     hio.io.set_divisor.valid := scr.wen && (scr.waddr === UInt(63))
     hio.io.set_divisor.bits := scr.wdata
@@ -97,5 +101,18 @@ object VLSIUtils {
     hio.io.in_fast.ready := Mux(hio.io.in_fast.bits(htifW), Bool(true), htif.in.ready)
     host.clk := hio.io.clk_slow
     host.clk_edge := Reg(next=host.clk && !Reg(next=host.clk))
+
+    val bio = Module((new SlowIO(512)) { Bits(width = BLOCKDEV_WIDTH) })
+    bio.io.set_divisor.valid := scr.wen && (scr.waddr === UInt(63))
+    bio.io.set_divisor.bits := scr.wdata
+
+    bio.io.out_fast <> bdev_inner.out
+    bdev_outer.out <> bio.io.out_slow
+    bio.io.in_slow <> bdev_outer.in
+    bdev_inner.in <> bio.io.in_fast
+
+    val bdev_last_clk = Reg(next = bdev_outer.clk)
+    bdev_outer.clk := bio.io.clk_slow
+    bdev_outer.clk_edge := bdev_outer.clk && !bdev_last_clk
   }
 }

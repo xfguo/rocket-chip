@@ -5,6 +5,7 @@ package rocketchip
 import Chisel._
 import cde.{Parameters, Field}
 import junctions._
+import junctions.PeripheralConsts._
 import uncore._
 import rocket._
 import rocket.Util._
@@ -75,6 +76,7 @@ class BasicTopIO(implicit val p: Parameters) extends ParameterizedBundle()(p)
 
 class TopIO(implicit p: Parameters) extends BasicTopIO()(p) {
   val mem = Vec(nMemChannels, new NastiIO)
+  val bdev = new BlockDeviceIO
 }
 
 object TopUtils {
@@ -86,6 +88,21 @@ object TopUtils {
     outer.w  <> Queue(inner.w, mifDataBeats)
     inner.r  <> Queue(outer.r, mifDataBeats)
     inner.b  <> Queue(outer.b)
+  }
+
+  def connectBlockDev(outer: BlockDeviceIO, inner: StreamIO) {
+    val out_q = Module(new Queue(Bits(width = BLOCKDEV_WIDTH), 2))
+    out_q.io.enq.valid := inner.out.valid
+    out_q.io.enq.bits := inner.out.bits.data
+    inner.out.ready := out_q.io.enq.ready
+    outer.out <> out_q.io.deq
+
+    val in_q = Module(new Queue(Bits(width = BLOCKDEV_WIDTH), 2))
+    inner.in.valid := in_q.io.deq.valid
+    inner.in.bits.data := in_q.io.deq.bits
+    inner.in.bits.last := Bool(false)
+    in_q.io.deq.ready := inner.in.ready
+    in_q.io.enq <> outer.in
   }
 }
 
@@ -114,6 +131,7 @@ class Top(topParams: Parameters) extends Module with HasTopLevelParameters {
   uncore.io.tiles_cached <> tileList.map(_.io.cached).flatten
   uncore.io.tiles_uncached <> tileList.map(_.io.uncached).flatten
   io.host <> uncore.io.host
+  io.bdev <> uncore.io.bdev
   if (p(UseBackupMemoryPort)) { io.mem_backup_ctrl <> uncore.io.mem_backup_ctrl }
 
   io.mem.zip(uncore.io.mem).foreach { case (outer, inner) =>
@@ -138,7 +156,7 @@ class Uncore(implicit val p: Parameters) extends Module
     val tiles_uncached = Vec(nUncachedTilePorts, new ClientUncachedTileLinkIO).flip
     val htif = Vec(nTiles, new HtifIO).flip
     val mem_backup_ctrl = new MemBackupCtrlIO
-    val mmio = new NastiIO
+    val bdev = new BlockDeviceIO
   }
 
   val htif = Module(new Htif(CSRs.mreset)) // One HTIF module per chip
@@ -171,16 +189,18 @@ class Uncore(implicit val p: Parameters) extends Module
   deviceTree.io <> outmemsys.io.deviceTree
 
   // Wire the htif to the memory port(s) and host interface
-  io.host.debug_stats_csr := htif.io.host.debug_stats_csr
   io.mem <> outmemsys.io.mem
   if(p(UseBackupMemoryPort)) {
     outmemsys.io.mem_backup_en := io.mem_backup_ctrl.en
-    VLSIUtils.padOutHTIFWithDividedClock(htif.io.host, scrFile.io.scr,
-      outmemsys.io.mem_backup, io.mem_backup_ctrl, io.host, htifW)
+    VLSIUtils.padOutHTIFWithDividedClock(scrFile.io.scr,
+      htif.io.host, io.host, htifW,
+      outmemsys.io.mem_backup, io.mem_backup_ctrl,
+      outmemsys.io.bdev, io.bdev)
   } else {
-    htif.io.host.out <> io.host.out
-    htif.io.host.in <> io.host.in
+    io.host <> htif.io.host
+    io.bdev <> outmemsys.io.bdev
   }
+  io.host.debug_stats_csr := htif.io.host.debug_stats_csr
 }
 
 /** The whole outer memory hierarchy, including a NoC, some kind of coherence
@@ -198,6 +218,7 @@ class OuterMemorySystem(implicit val p: Parameters) extends Module with HasTopLe
     val csr = Vec(nTiles, new SmiIO(xLen, csrAddrBits))
     val scr = new SmiIO(xLen, scrAddrBits)
     val deviceTree = new NastiIO
+    val bdev = new BlockDeviceIO
   }
 
   val dmaOpt = if (p(UseDma))
@@ -300,6 +321,10 @@ class OuterMemorySystem(implicit val p: Parameters) extends Module with HasTopLe
   }
 
   io.deviceTree <> mmio_ic.io.slaves(addrHashMap("conf:devicetree").port)
+
+  val bdev_conv = Module(new NastiIOStreamIOConverter(BLOCKDEV_WIDTH))
+  bdev_conv.io.nasti <> mmio_ic.io.slaves(addrHashMap("devices:blockdev").port)
+  TopUtils.connectBlockDev(io.bdev, bdev_conv.io.stream)
 
   val mem_channels = mem_ic.io.slaves
   // Create a SerDes for backup memory port

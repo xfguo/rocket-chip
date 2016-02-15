@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fesvr/blockdev_pthread.h>
 
 #define MEM_SIZE_BITS 3
 #define MEM_LEN_BITS 8
@@ -35,6 +36,7 @@ int main(int argc, char** argv)
   bool print_cycles = false;
   uint64_t memsz_mb = MEM_SIZE / (1024*1024);
   mm_t *mm[N_MEM_CHANNELS];
+  blockdev_pthread_t *bdev;
 
   for (int i = 1; i < argc; i++)
   {
@@ -105,6 +107,8 @@ int main(int argc, char** argv)
           std::vector<std::string>(argv + 1, argv + argc));
   int htif_bits = tile.Top__io_host_in_bits.width();
   assert(htif_bits % 8 == 0 && htif_bits <= val_n_bits());
+
+  bdev = new blockdev_pthread_t(std::vector<std::string>(argv + 1, argv + argc));
 
   signal(SIGTERM, handle_sigterm);
 
@@ -217,6 +221,21 @@ int main(int argc, char** argv)
       tile.Top__io_host_out_ready = LIT<1>(1);
     }
 
+    if (tile.Top__io_bdev_clk_edge.to_bool())
+    {
+      bool bdev_in_valid;
+      uint64_t bdev_in_bits;
+
+      if (tile.Top__io_bdev_in_ready.to_bool() || !bdev_in_valid)
+          bdev_in_valid = bdev->recv_nonblocking(&bdev_in_bits);
+      tile.Top__io_bdev_in_valid = LIT<1>(bdev_in_valid);
+      tile.Top__io_bdev_in_bits = LIT<64>(bdev_in_bits);
+
+      if (tile.Top__io_bdev_out_valid.to_bool())
+        bdev->send(tile.Top__io_bdev_out_bits.lo_word());
+      tile.Top__io_bdev_out_ready = LIT<1>(1);
+    }
+
     if (log && trace_count >= start)
       tile.print(stderr);
 
@@ -247,6 +266,7 @@ int main(int argc, char** argv)
   }
 
   delete htif;
+  delete bdev;
 
   return ret;
 }

@@ -238,6 +238,7 @@ class DefaultConfig extends Config (
         if (site(UseDma)) {
           devset.addDevice("dma", site(CacheBlockBytes), "dma")
         }
+        devset.addDevice("blockdev", 8, "disk")
         devset
       }
   }},

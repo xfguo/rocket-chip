@@ -3,6 +3,7 @@
 #include "htif_emulator.h"
 #include "mm.h"
 #include "mm_dramsim2.h"
+#include <fesvr/blockdev_pthread.h>
 #include <DirectC.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +20,7 @@ static unsigned htif_bytes = HTIF_WIDTH / 8;
 static mm_t* mm[N_MEM_CHANNELS];
 static const char* loadmem;
 static bool dramsim = false;
+static blockdev_pthread_t *bdev;
 
 void htif_fini(vc_handle failure)
 {
@@ -46,6 +48,8 @@ int main(int argc, char** argv)
     mm[i] = dramsim ? (mm_t*)(new mm_dramsim2_t) : (mm_t*)(new mm_magic_t);
     mm[i]->init(MEM_SIZE / N_MEM_CHANNELS, MEM_DATA_BITS / 8, CACHE_BLOCK_BYTES);
   }
+
+  bdev = new blockdev_pthread_t(std::vector<std::string>(argv + 1, argv + argc));
 
   if (loadmem) {
     void *mems[N_MEM_CHANNELS];
@@ -187,6 +191,39 @@ void htif_tick
 
   bits.d = htif->done() ? (htif->exit_code() << 1 | 1) : 0;
   vc_put4stVector(exit, &bits);
+}
+
+void bdev_tick
+(
+  vc_handle bdev_in_valid,
+  vc_handle bdev_in_ready,
+  vc_handle bdev_in_bits,
+  vc_handle bdev_out_valid,
+  vc_handle bdev_out_ready,
+  vc_handle bdev_out_bits
+)
+{
+  vec32 *out_bits;
+  vec32 in_bits[2] = {{0, 0}, {0, 0}};
+  static bool peek_in_valid;
+  static uint64_t peek_in_bits = 0;
+  uint64_t push_out_bits;
+
+  if (vc_getScalar(bdev_in_ready))
+    peek_in_valid = bdev->recv_nonblocking(&peek_in_bits);
+
+  vc_putScalar(bdev_out_ready, 1);
+  if (vc_getScalar(bdev_out_valid))
+  {
+    out_bits = vc_4stVectorRef(bdev_out_bits);
+    push_out_bits = (out_bits[1].d << 32) | out_bits[0].d;
+    bdev->send(push_out_bits);
+  }
+
+  in_bits[0].d = peek_in_bits & 0xFFFFFFFFL;
+  in_bits[1].d = (peek_in_bits >> 32) & 0xFFFFFFFFL;
+  vc_put4stVector(bdev_in_bits, in_bits);
+  vc_putScalar(bdev_in_valid, peek_in_valid);
 }
 
 }

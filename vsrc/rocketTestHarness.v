@@ -15,6 +15,17 @@ extern "A" void htif_tick
   output reg  [31:0]            exit
 );
 
+extern "A" void bdev_tick
+(
+  output reg                    bdev_in_valid,
+  input  reg                    bdev_in_ready,
+  output reg  [63:0]            bdev_in_bits,
+
+  input  reg                    bdev_out_valid,
+  output reg                    bdev_out_ready,
+  input  reg  [63:0]            bdev_out_bits
+);
+
 extern "A" void memory_tick
 (
   input  reg [31:0]               channel,
@@ -185,6 +196,22 @@ module rocketTestHarness;
         exit
       );
     end
+  end
+
+  always @(posedge bdev_clk) begin
+      if (reset || r_reset) begin
+          bdev_out_ready <= 0;
+          bdev_in_valid <= 0;
+      end else begin
+          bdev_tick (
+              bdev_in_valid,
+              bdev_in_ready,
+              bdev_in_bits,
+              bdev_out_valid,
+              bdev_out_ready,
+              bdev_out_bits
+          );
+      end
   end
 
   //-----------------------------------------------
