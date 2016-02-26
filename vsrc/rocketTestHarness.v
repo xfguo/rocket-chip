@@ -98,15 +98,16 @@ module rocketTestHarness;
 `ifdef MEM_BACKUP_EN
   memdessertMemDessert dessert
   (
-    .clk(htif_clk),
+    .clk(mem_bk_clk),
     .reset(reset),
 
-    .io_narrow_req_valid(mem_bk_out_valid),
-    .io_narrow_req_ready(mem_bk_out_ready),
-    .io_narrow_req_bits(htif_out_bits),
+    .io_narrow_req_valid (mem_bk_out_valid),
+    .io_narrow_req_ready (mem_bk_out_ready),
+    .io_narrow_req_bits (mem_bk_out_bits),
 
-    .io_narrow_resp_valid(mem_bk_in_valid),
-    .io_narrow_resp_bits(mem_in_bits),
+    .io_narrow_resp_valid (mem_bk_in_valid),
+    .io_narrow_resp_ready (mem_bk_in_ready),
+    .io_narrow_resp_bits (mem_bk_in_bits),
 
     .io_wide_req_cmd_valid(mem_bk_req_valid),
     .io_wide_req_cmd_ready(mem_bk_req_ready),
@@ -126,7 +127,7 @@ module rocketTestHarness;
 
   BackupMemory mem
   (
-    .clk(htif_clk),
+    .clk(mem_bk_clk),
     .reset(reset),
 
     .mem_req_valid(mem_bk_req_valid),
@@ -147,28 +148,23 @@ module rocketTestHarness;
   // set dessert outputs to zero when !backupmem_en
   assign mem_bk_out_ready = 1'b0; 
   assign mem_bk_in_valid = 1'b0;
-  assign mem_in_bits = {`HTIF_WIDTH {1'b0}};   
+  assign mem_bk_in_bits = {`MEM_BACKUP_WIDTH {1'b0}};
   assign mem_bk_req_valid = 1'b0;
   assign mem_bk_req_ready = 1'b0;
-  assign mem_bk_req_addr = {`MEM_ADDR_BITS {1'b0}}; 
+  assign mem_bk_req_addr = {`MEM_ADDR_BITS {1'b0}};
   assign mem_bk_req_rw = 1'b0;
-  assign mem_bk_req_tag = {`MEM_ID_BITS {1'b0}}; 
+  assign mem_bk_req_tag = {`MEM_ID_BITS {1'b0}};
   assign mem_bk_req_data_valid = 1'b0;
-  assign mem_bk_req_data_bits = 16'd0; 
+  assign mem_bk_req_data_bits = 16'd0;
 `endif
 
-  reg htif_in_valid_premux;
-  reg [`HTIF_WIDTH-1:0] htif_in_bits_premux;
-  assign htif_in_bits = mem_bk_in_valid ? mem_in_bits : htif_in_bits_premux;
-  assign htif_in_valid = htif_in_valid_premux && !mem_bk_in_valid;
-  wire htif_in_ready_premux = htif_in_ready && !mem_bk_in_valid;
   reg [31:0] exit = 0;
 
   always @(posedge htif_clk)
   begin
     if (reset || r_reset)
     begin
-      htif_in_valid_premux <= 0;
+      htif_in_valid <= 0;
       htif_out_ready <= 0;
       exit <= 0;
     end
@@ -176,9 +172,9 @@ module rocketTestHarness;
     begin
       htif_tick
       (
-        htif_in_valid_premux,
-        htif_in_ready_premux,
-        htif_in_bits_premux,
+        htif_in_valid,
+        htif_in_ready,
+        htif_in_bits,
         htif_out_valid,
         htif_out_ready,
         htif_out_bits,

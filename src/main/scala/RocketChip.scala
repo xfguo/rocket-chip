@@ -27,12 +27,18 @@ case object BankIdLSB extends Field[Int]
 case object NOutstandingMemReqsPerChannel extends Field[Int]
 /** Whether to use the slow backup memory port [VLSI] */
 case object UseBackupMemoryPort extends Field[Boolean]
+/** Width of the backup memory port */
+case object BackupMemoryWidth extends Field[Int]
+/** Whether to use the HTIF clock divider (VLSI and Emulator) */
+case object UseHtifClockDiv extends Field[Boolean]
 /** Function for building some kind of coherence manager agent */
 case object BuildL2CoherenceManager extends Field[(Int, Parameters) => CoherenceAgent]
 /** Function for building some kind of tile connected to a reset signal */
 case object BuildTiles extends Field[Seq[(Bool, Parameters) => Tile]]
 /** Enable DMA engine */
 case object UseDma extends Field[Boolean]
+/** How much of the MMIO space should we export through the backup port */
+case object ExportDeviceSize extends Field[Int]
 
 case object UseStreamLoopback extends Field[Boolean]
 case object StreamLoopbackSize extends Field[Int]
@@ -60,26 +66,21 @@ trait HasTopLevelParameters {
   lazy val scrAddrBits = log2Up(nSCR)
   lazy val scrDataBits = 64
   lazy val scrDataBytes = scrDataBits / 8
+  lazy val exportDeviceSize = p(ExportDeviceSize)
+  lazy val memBackupW = p(BackupMemoryWidth)
   lazy val memoryChannelMuxConfigs = p(MemoryChannelMuxConfigs)
   //require(lsb + log2Up(nBanks) < mifAddrBits)
-}
-
-class MemBackupCtrlIO extends Bundle {
-  val en = Bool(INPUT)
-  val in_valid = Bool(INPUT)
-  val out_ready = Bool(INPUT)
-  val out_valid = Bool(OUTPUT)
 }
 
 /** Top-level io for the chip */
 class BasicTopIO(implicit val p: Parameters) extends ParameterizedBundle()(p)
     with HasTopLevelParameters {
   val host = new HostIO(htifW)
-  val mem_backup_ctrl = new MemBackupCtrlIO
 }
 
 class TopIO(implicit p: Parameters) extends BasicTopIO()(p) {
   val mem = Vec(nMemChannels, new NastiIO)
+  val mem_backup = new AtosSerializedIO(memBackupW)
 }
 
 object TopUtils {
@@ -119,7 +120,6 @@ class Top(topParams: Parameters) extends Module with HasTopLevelParameters {
   uncore.io.tiles_cached <> tileList.map(_.io.cached).flatten
   uncore.io.tiles_uncached <> tileList.map(_.io.uncached).flatten
   io.host <> uncore.io.host
-  if (p(UseBackupMemoryPort)) { io.mem_backup_ctrl <> uncore.io.mem_backup_ctrl }
 
   io.mem.zip(uncore.io.mem).foreach { case (outer, inner) =>
     TopUtils.connectNasti(outer, inner)
@@ -142,8 +142,8 @@ class Uncore(implicit val p: Parameters) extends Module
     val tiles_cached = Vec(nCachedTilePorts, new ClientTileLinkIO).flip
     val tiles_uncached = Vec(nUncachedTilePorts, new ClientUncachedTileLinkIO).flip
     val htif = Vec(nTiles, new HtifIO).flip
-    val mem_backup_ctrl = new MemBackupCtrlIO
     val mmio = new NastiIO
+    val mem_backup = new AtosSerializedIO(memBackupW)
   }
 
   val htif = Module(new Htif(CSRs.mreset)) // One HTIF module per chip
@@ -181,19 +181,27 @@ class Uncore(implicit val p: Parameters) extends Module
     "MEMORY_CHANNEL_MUX_SELECT")
   outmemsys.io.memory_channel_mux_select := memory_channel_mux_select
 
+  val mem_backup_en = scrFile.io.scr.attach(
+    Reg(init = Bool(false)), "BACKUP_MEMORY_EN")
+  outmemsys.io.mem_backup_en := mem_backup_en
+
   val deviceTree = Module(new NastiROM(p(DeviceTree).toSeq))
   deviceTree.io <> outmemsys.io.deviceTree
 
   // Wire the htif to the memory port(s) and host interface
   io.host.debug_stats_csr := htif.io.host.debug_stats_csr
   io.mem <> outmemsys.io.mem
-  if(p(UseBackupMemoryPort)) {
-    outmemsys.io.mem_backup_en := io.mem_backup_ctrl.en
-    VLSIUtils.padOutHTIFWithDividedClock(htif.io.host, scrFile.io.scr,
-      outmemsys.io.mem_backup, io.mem_backup_ctrl, io.host, htifW)
+  if(p(UseHtifClockDiv)) {
+    VLSIUtils.padOutHTIFWithDividedClock(
+      htif.io.host, scrFile.io.scr, io.host, htifW)
   } else {
     htif.io.host.out <> io.host.out
     htif.io.host.in <> io.host.in
+  }
+
+  if (p(UseBackupMemoryPort)) {
+    VLSIUtils.padOutBackupMemWithDividedClock(
+      outmemsys.io.mem_backup, scrFile.io.scr, io.mem_backup, memBackupW)
   }
 }
 
@@ -207,12 +215,12 @@ class OuterMemorySystem(implicit val p: Parameters) extends Module with HasTopLe
     val htif_uncached = (new ClientUncachedTileLinkIO).flip
     val incoherent = Vec(nTiles, Bool()).asInput
     val mem = Vec(nMemChannels, new NastiIO)
-    val mem_backup = new MemSerializedIO(htifW)
-    val mem_backup_en = Bool(INPUT)
     val memory_channel_mux_select = UInt(INPUT, log2Up(memoryChannelMuxConfigs.size))
     val csr = Vec(nTiles, new SmiIO(xLen, csrAddrBits))
     val scr = new SmiIO(xLen, scrAddrBits)
     val deviceTree = new NastiIO
+    val mem_backup = new AtosSerializedIO(memBackupW)
+    val mem_backup_en = Bool(INPUT)
   }
 
   val dmaOpt = if (p(UseDma))
@@ -330,10 +338,28 @@ class OuterMemorySystem(implicit val p: Parameters) extends Module with HasTopLe
   io.deviceTree <> mmio_ic.io.slaves(addrHashMap("conf:devicetree").port)
 
   val mem_channels = mem_ic.io.slaves
-  // Create a SerDes for backup memory port
-  if(p(UseBackupMemoryPort)) {
-    VLSIUtils.doOuterMemorySystemSerdes(
-      mem_channels, io.mem, io.mem_backup, io.mem_backup_en,
-      nMemChannels, htifW, p(CacheBlockOffsetBits))
+  if (p(UseBackupMemoryPort)) {
+    val demux = Module(new NastiMemoryDemux(2))
+    demux.io.master <> mem_channels(0)
+    demux.io.select := io.mem_backup_en
+    io.mem(0) <> demux.io.slaves(0)
+
+    val arbN = if (exportDeviceSize > 0) 2 else 1
+    val atos_arb = Module(new NastiArbiter(arbN))
+    atos_arb.io.master(0) <> demux.io.slaves(1)
+    if (exportDeviceSize > 0) {
+      val exportPort = addrHashMap("devices:export").port
+      atos_arb.io.master(1) <> mmio_ic.io.slaves(exportPort)
+    }
+
+    val atos_conv = Module(new AtosClientConverter)
+    val atos_serdes = Module(new AtosSerdes(memBackupW))
+    atos_conv.io.nasti <> atos_arb.io.slave
+    atos_serdes.io.wide <> atos_conv.io.atos
+    io.mem_backup <> atos_serdes.io.narrow
+
+    for (i <- 1 until nMemChannels) {
+      io.mem(i) <> mem_channels(i)
+    }
   } else { io.mem <> mem_channels }
 }

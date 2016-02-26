@@ -18,16 +18,18 @@ object TestBenchGeneration extends FileSystemUtilities {
 
     val defs = s"""
   reg htif_out_ready;
-  wire htif_in_valid;
-  wire [`HTIF_WIDTH-1:0] htif_in_bits;
+  reg htif_in_valid;
+  reg [`HTIF_WIDTH-1:0] htif_in_bits;
   wire htif_in_ready, htif_out_valid;
   wire [`HTIF_WIDTH-1:0] htif_out_bits;
   wire htif_out_stats;
 
   wire mem_bk_in_valid;
+  wire mem_bk_in_ready;
+  wire [`MEM_BACKUP_WIDTH-1:0] mem_bk_in_bits;
   wire mem_bk_out_valid;
   wire mem_bk_out_ready;
-  wire [`HTIF_WIDTH-1:0] mem_in_bits;
+  wire [`MEM_BACKUP_WIDTH-1:0] mem_bk_out_bits;
 """
     val nasti_defs = (0 until nMemChannel) map { i => s"""
   wire ar_valid_$i;
@@ -48,7 +50,7 @@ object TestBenchGeneration extends FileSystemUtilities {
   reg w_ready_$i;
   wire [`MEM_STRB_BITS-1:0] w_strb_$i;
   wire [`MEM_DATA_BITS-1:0] w_data_$i;
-  wire w_last;
+  wire w_last_$i;
 
   reg r_valid_$i;
   wire r_ready_$i;
@@ -76,9 +78,13 @@ object TestBenchGeneration extends FileSystemUtilities {
   
   wire htif_out_stats_delay;
 
+  wire mem_bk_clk;
   wire mem_bk_out_ready_delay;
-  wire mem_bk_in_valid_delay;
   wire mem_bk_out_valid_delay;
+  wire [`MEM_BACKUP_WIDTH-1:0] mem_bk_out_bits_delay;
+  wire mem_bk_in_ready_delay;
+  wire mem_bk_in_valid_delay;
+  wire [`MEM_BACKUP_WIDTH-1:0] mem_bk_in_bits_delay;
 
   assign #0.1 htif_in_valid_delay = htif_in_valid;
   assign #0.1 htif_in_ready = htif_in_ready_delay;
@@ -91,8 +97,11 @@ object TestBenchGeneration extends FileSystemUtilities {
   assign #0.1 htif_out_stats = htif_out_stats_delay;
 
   assign #0.1 mem_bk_out_ready_delay = mem_bk_out_ready;
-  assign #0.1 mem_bk_in_valid_delay = mem_bk_in_valid;
   assign #0.1 mem_bk_out_valid = mem_bk_out_valid_delay;
+  assign #0.1 mem_bk_out_bits = mem_bk_out_bits_delay;
+  assign #0.1 mem_bk_in_valid_delay = mem_bk_in_valid;
+  assign #0.1 mem_bk_in_bits_delay = mem_bk_in_bits;
+  assign #0.1 mem_bk_in_ready = mem_bk_in_ready_delay;
 """
 
     val nasti_delays = (0 until nMemChannel) map { i => s"""
@@ -219,6 +228,7 @@ object TestBenchGeneration extends FileSystemUtilities {
   assign mem_bk_out_valid_delay = 1'b0;
   assign htif_out_stats_delay = 1'b0;
   assign htif_clk = clk;
+  assign mem_bk_clk = clk;
 `endif
 
   Top dut
@@ -233,31 +243,30 @@ object TestBenchGeneration extends FileSystemUtilities {
     .io_host_clk_edge(),
     .io_host_debug_stats_csr(htif_out_stats_delay),
 
-`ifdef MEM_BACKUP_EN
-    .io_mem_backup_ctrl_en(1'b1),
-`else
-    .io_mem_backup_ctrl_en(1'b0),
-`endif // MEM_BACKUP_EN
-    .io_mem_backup_ctrl_in_valid(mem_bk_in_valid_delay),
-    .io_mem_backup_ctrl_out_ready(mem_bk_out_ready_delay),
-    .io_mem_backup_ctrl_out_valid(mem_bk_out_valid_delay),
+    .io_mem_backup_clk(mem_bk_clk),
+    .io_mem_backup_clk_edge(),
 `else
     .io_host_clk (),
     .io_host_clk_edge (),
     .io_host_debug_stats_csr (),
 
-    .io_mem_backup_ctrl_en (1'b0),
-    .io_mem_backup_ctrl_in_valid (1'b0),
-    .io_mem_backup_ctrl_out_ready (1'b0),
-    .io_mem_backup_ctrl_out_valid (),
+    .io_mem_backup_clk(),
+    .io_mem_backup_clk_edge(),
 `endif // FPGA
 
-    .io_host_in_valid(htif_in_valid_delay),
-    .io_host_in_ready(htif_in_ready_delay),
-    .io_host_in_bits(htif_in_bits_delay),
-    .io_host_out_valid(htif_out_valid_delay),
-    .io_host_out_ready(htif_out_ready_delay),
-    .io_host_out_bits(htif_out_bits_delay)
+    .io_host_in_valid  (htif_in_valid_delay),
+    .io_host_in_ready  (htif_in_ready_delay),
+    .io_host_in_bits   (htif_in_bits_delay),
+    .io_host_out_valid (htif_out_valid_delay),
+    .io_host_out_ready (htif_out_ready_delay),
+    .io_host_out_bits  (htif_out_bits_delay),
+
+    .io_mem_backup_req_valid  (mem_bk_out_valid_delay),
+    .io_mem_backup_req_ready  (mem_bk_out_ready_delay),
+    .io_mem_backup_req_bits   (mem_bk_out_bits_delay),
+    .io_mem_backup_resp_valid (mem_bk_in_valid_delay),
+    .io_mem_backup_resp_ready (mem_bk_in_ready_delay),
+    .io_mem_backup_resp_bits  (mem_bk_in_bits_delay)
   );
 """
 

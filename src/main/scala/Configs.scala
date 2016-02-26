@@ -223,7 +223,10 @@ class DefaultConfig extends Config (
       case BankIdLSB => 0
       case CacheBlockBytes => Dump("CACHE_BLOCK_BYTES", 64)
       case CacheBlockOffsetBits => log2Up(here(CacheBlockBytes))
-      case UseBackupMemoryPort => true
+      case UseBackupMemoryPort => false
+      case BackupMemoryWidth => Dump("MEM_BACKUP_WIDTH", 8)
+      case UseHtifClockDiv => true
+      case ExportDeviceSize => 0
       case MMIOBase => Dump("MEM_SIZE", BigInt(1L << 30)) // 1 GB
       case DeviceTree => makeDeviceTree()
       case GlobalAddrMap => {
@@ -240,6 +243,9 @@ class DefaultConfig extends Config (
         }
         if (site(UseDma)) {
           devset.addDevice("dma", site(CacheBlockBytes), "dma")
+        }
+        if (site(UseBackupMemoryPort) && site(ExportDeviceSize) > 0) {
+          devset.addDevice("export", site(ExportDeviceSize), "unknown")
         }
         devset
       }
@@ -350,7 +356,7 @@ class ZscaleConfig extends Config(new WithZscale ++ new DefaultConfig)
 class FPGAConfig extends Config (
   (pname,site,here) => pname match {
     case NAcquireTransactors => 4
-    case UseBackupMemoryPort => false
+    case UseHtifClockDiv => false
   }
 )
 
