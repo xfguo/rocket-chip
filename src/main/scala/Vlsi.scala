@@ -7,28 +7,36 @@ import cde.Parameters
 import junctions._
 import uncore._
 
-class MemDessert(topParams: Parameters) extends Module {
+class BackupMemory(topParams: Parameters) extends Module {
   implicit val p = topParams
   val memWidth = p(BackupMemoryWidth)
-  val io = new MemDesserIO(memWidth)
+  val memDepth = p(BackupMemoryDepth)
+  val io = new AtosSerializedIO(memWidth).flip
 
   val desser = Module(new AtosDesser(memWidth))
-  val conv1 = Module(new AtosManagerConverter)
-  val conv2 = Module(new MemIONastiIOConverter(p(CacheBlockOffsetBits)))
-  desser.io.narrow <> io.narrow
-  conv1.io.atos <> desser.io.wide
-  conv2.io.nasti <> conv1.io.nasti
-  io.wide <> conv2.io.mem
+  val conv = Module(new AtosManagerConverter)
+  val mem = Module(new NastiRAM(memDepth))
+  desser.io.narrow <> io
+  conv.io.atos <> desser.io.wide
+  mem.io <> conv.io.nasti
 }
 
 object VLSIUtils {
+  def getClockDivCtrl(scr: SCRIO): ValidIO[UInt] = {
+    val set_div = Wire(Valid(UInt(width = 32)))
+    val divisor = RegEnable(set_div.bits, set_div.valid)
+    scr.rdata(63) := divisor
+    scr.allocate(63, "HTIF_IO_CLOCK_DIVISOR")
+    set_div.valid := scr.wen && (scr.waddr === UInt(63))
+    set_div.bits := scr.wdata
+    set_div
+  }
+
   def padOutBackupMemWithDividedClock(
-      parent: AtosSerializedIO, scr: SCRIO, child: AtosSerializedIO, w: Int) {
+      parent: AtosSerializedIO, child: AtosSerializedIO,
+      set_div: ValidIO[UInt], w: Int) {
     val hio = Module((new SlowIO(512)) { Bits(width = w) })
-    hio.io.set_divisor.valid := scr.wen && (scr.waddr === UInt(62))
-    hio.io.set_divisor.bits := scr.wdata
-    scr.rdata(62) := hio.io.divisor
-    scr.allocate(62, "BACKUP_MEM_CLOCK_DIVISOR")
+    hio.io.set_divisor := set_div
 
     hio.io.out_fast <> parent.req
     child.req <> hio.io.out_slow
@@ -40,15 +48,10 @@ object VLSIUtils {
   }
 
   def padOutHTIFWithDividedClock(
-      htif: HostIO,
-      scr: SCRIO,
-      host: HostIO,
-      htifW: Int) {
+      htif: HostIO, host: HostIO,
+      set_div: ValidIO[UInt], htifW: Int) {
     val hio = Module((new SlowIO(512)) { Bits(width = htifW) })
-    hio.io.set_divisor.valid := scr.wen && (scr.waddr === UInt(63))
-    hio.io.set_divisor.bits := scr.wdata
-    scr.rdata(63) := hio.io.divisor
-    scr.allocate(63, "HTIF_IO_CLOCK_DIVISOR")
+    hio.io.set_divisor := set_div
 
     hio.io.out_fast <> htif.out
     host.out <> hio.io.out_slow

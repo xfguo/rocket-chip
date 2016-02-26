@@ -72,7 +72,6 @@ module rocketTestHarness;
   reg [  31:0] mem_width = `MEM_DATA_BITS;
   reg [  63:0] max_cycles = 0;
   reg [  63:0] trace_count = 0;
-  reg [1023:0] loadmem = 0;
   reg [1023:0] vcdplusfile = 0;
   reg [1023:0] vcdfile = 0;
   reg          stats_active = 0;
@@ -87,75 +86,28 @@ module rocketTestHarness;
     r_reset <= reset;
   end
 
-  wire mem_bk_req_valid, mem_bk_req_rw, mem_bk_req_data_valid;
-  wire [`MEM_ID_BITS-1:0] mem_bk_req_tag;
-  wire [`MEM_ADDR_BITS-1:0] mem_bk_req_addr;
-  wire [`MEM_DATA_BITS-1:0] mem_bk_req_data_bits;
-  wire mem_bk_req_ready, mem_bk_req_data_ready, mem_bk_resp_valid;
-  wire [`MEM_ID_BITS-1:0]  mem_bk_resp_tag;
-  wire [`MEM_DATA_BITS-1:0] mem_bk_resp_data;
-
 `ifdef MEM_BACKUP_EN
-  memdessertMemDessert dessert
+  bkmemBackupMemory bkmem
   (
-    .clk(mem_bk_clk),
-    .reset(reset),
+    .clk (mem_bk_clk),
+    .reset (reset),
 
-    .io_narrow_req_valid (mem_bk_out_valid),
-    .io_narrow_req_ready (mem_bk_out_ready),
-    .io_narrow_req_bits (mem_bk_out_bits),
+    .io_clk (),
+    .io_clk_edge (),
 
-    .io_narrow_resp_valid (mem_bk_in_valid),
-    .io_narrow_resp_ready (mem_bk_in_ready),
-    .io_narrow_resp_bits (mem_bk_in_bits),
+    .io_req_valid (mem_bk_req_valid),
+    .io_req_ready (mem_bk_req_ready),
+    .io_req_bits (mem_bk_req_bits),
 
-    .io_wide_req_cmd_valid(mem_bk_req_valid),
-    .io_wide_req_cmd_ready(mem_bk_req_ready),
-    .io_wide_req_cmd_bits_rw(mem_bk_req_rw),
-    .io_wide_req_cmd_bits_addr(mem_bk_req_addr),
-    .io_wide_req_cmd_bits_tag(mem_bk_req_tag),
-
-    .io_wide_req_data_valid(mem_bk_req_data_valid),
-    .io_wide_req_data_ready(mem_bk_req_data_ready),
-    .io_wide_req_data_bits_data(mem_bk_req_data_bits),
-
-    .io_wide_resp_valid(mem_bk_resp_valid),
-    .io_wide_resp_ready(),
-    .io_wide_resp_bits_data(mem_bk_resp_data),
-    .io_wide_resp_bits_tag(mem_bk_resp_tag)
-  );
-
-  BackupMemory mem
-  (
-    .clk(mem_bk_clk),
-    .reset(reset),
-
-    .mem_req_valid(mem_bk_req_valid),
-    .mem_req_ready(mem_bk_req_ready),
-    .mem_req_rw(mem_bk_req_rw),
-    .mem_req_addr(mem_bk_req_addr),
-    .mem_req_tag(mem_bk_req_tag),
-
-    .mem_req_data_valid(mem_bk_req_data_valid),
-    .mem_req_data_ready(mem_bk_req_data_ready),
-    .mem_req_data_bits(mem_bk_req_data_bits),
-
-    .mem_resp_valid(mem_bk_resp_valid),
-    .mem_resp_data(mem_bk_resp_data),
-    .mem_resp_tag(mem_bk_resp_tag)
+    .io_resp_valid (mem_bk_resp_valid),
+    .io_resp_ready (mem_bk_resp_ready),
+    .io_resp_bits (mem_bk_resp_bits)
   );
 `else
   // set dessert outputs to zero when !backupmem_en
-  assign mem_bk_out_ready = 1'b0; 
-  assign mem_bk_in_valid = 1'b0;
-  assign mem_bk_in_bits = {`MEM_BACKUP_WIDTH {1'b0}};
-  assign mem_bk_req_valid = 1'b0;
-  assign mem_bk_req_ready = 1'b0;
-  assign mem_bk_req_addr = {`MEM_ADDR_BITS {1'b0}};
-  assign mem_bk_req_rw = 1'b0;
-  assign mem_bk_req_tag = {`MEM_ID_BITS {1'b0}};
-  assign mem_bk_req_data_valid = 1'b0;
-  assign mem_bk_req_data_bits = 16'd0;
+  assign mem_bk_req_ready = 1'b0; 
+  assign mem_bk_resp_valid = 1'b0;
+  assign mem_bk_resp_bits = {`MEM_BACKUP_WIDTH {1'b0}};
 `endif
 
   reg [31:0] exit = 0;
@@ -224,11 +176,6 @@ module rocketTestHarness;
   initial
   begin
     $value$plusargs("max-cycles=%d", max_cycles);
-`ifdef MEM_BACKUP_EN
-    $value$plusargs("loadmem=%s", loadmem);
-    if (loadmem)
-      $readmemh(loadmem, mem.ram);
-`endif
     verbose = $test$plusargs("verbose");
 `ifdef DEBUG
     stats_active = $test$plusargs("stats");
@@ -240,6 +187,9 @@ module rocketTestHarness;
     begin
       $dumpfile(vcdfile);
       $dumpvars(0, dut);
+`ifdef MEM_BACKUP_EN
+      $dumpvars(0, bkmem);
+`endif
     end
     if (!stats_active)
     begin
@@ -296,14 +246,6 @@ module rocketTestHarness;
       begin
         stop_stats;
       end
-    end
-  end
-
-  always @(posedge htif_clk)
-  begin
-    if (verbose && mem_bk_req_valid && mem_bk_req_ready)
-    begin
-      $fdisplay(stderr, "MB: rw=%d addr=%x", mem_bk_req_rw, {mem_bk_req_addr,6'd0});
     end
   end
 

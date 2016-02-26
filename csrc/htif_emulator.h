@@ -7,7 +7,8 @@
 
 class htif_emulator_t : public htif_pthread_t
 {
- int memory_channel_mux_select;
+ int memory_channel_mux_select = 0;
+ int use_backup_mem = 0;
 
  public:
   htif_emulator_t(uint32_t memsz_mb, const std::vector<std::string>& args)
@@ -19,6 +20,8 @@ class htif_emulator_t : public htif_pthread_t
     for (const auto& arg: args) {
       if (!strncmp(arg.c_str(), "+memory_channel_mux_select=", 27))
         memory_channel_mux_select = atoi(arg.c_str()+27);
+      if (!strncmp(arg.c_str(), "+backup_mem", 11))
+	use_backup_mem = 1;
     }
  }
 
@@ -35,6 +38,7 @@ class htif_emulator_t : public htif_pthread_t
   {
     set_clock_divisor(5, 2);
     write_cr(-1, UNCORE_SCR__MEMORY_CHANNEL_MUX_SELECT__OFFSET, memory_channel_mux_select);
+    write_cr(-1, UNCORE_SCR__BACKUP_MEMORY_EN__OFFSET, use_backup_mem);
     htif_pthread_t::start();
   }
 

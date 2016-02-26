@@ -7,9 +7,8 @@
 sim_vsrcs = \
 	$(generated_dir)/$(MODEL).$(CONFIG).v \
 	$(generated_dir)/consts.$(CONFIG).vh \
-	$(generated_dir)/memdessertMemDessert.$(CONFIG).v \
+	$(generated_dir)/bkmemBackupMemory.$(CONFIG).v \
 	$(base_dir)/vsrc/$(TB).v \
-	$(base_dir)/vsrc/backup_mem.v \
 
 # C sources
 
@@ -58,6 +57,7 @@ $(simv) : $(sim_vsrcs) $(sim_csrcs) $(sim_dir)/libdramsim.a $(consts_header)
 	cd $(sim_dir) && \
 	rm -rf csrc && \
 	$(VCS) $(VCS_OPTS) -o $(simv) \
+	+define+MEM_BACKUP_EN \
 	-debug_pp \
 
 simv_debug = $(sim_dir)/simv-$(MODEL)-$(CONFIG)-debug
@@ -65,9 +65,8 @@ $(simv_debug) : $(sim_vsrcs) $(sim_csrcs) $(sim_dir)/libdramsim.a $(consts_heade
 	cd $(sim_dir) && \
 	rm -rf csrc && \
 	$(VCS) $(VCS_OPTS) -o $(simv_debug) \
+	+define+MEM_BACKUP_EN \
 	+define+DEBUG -debug_pp \
-
-#	+define+MEM_BACKUP_EN \
 
 #--------------------------------------------------------------------
 # Run

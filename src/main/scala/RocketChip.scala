@@ -29,6 +29,8 @@ case object NOutstandingMemReqsPerChannel extends Field[Int]
 case object UseBackupMemoryPort extends Field[Boolean]
 /** Width of the backup memory port */
 case object BackupMemoryWidth extends Field[Int]
+/** Number of words in the backup memory */
+case object BackupMemoryDepth extends Field[Int]
 /** Whether to use the HTIF clock divider (VLSI and Emulator) */
 case object UseHtifClockDiv extends Field[Boolean]
 /** Function for building some kind of coherence manager agent */
@@ -120,6 +122,7 @@ class Top(topParams: Parameters) extends Module with HasTopLevelParameters {
   uncore.io.tiles_cached <> tileList.map(_.io.cached).flatten
   uncore.io.tiles_uncached <> tileList.map(_.io.uncached).flatten
   io.host <> uncore.io.host
+  io.mem_backup <> uncore.io.mem_backup
 
   io.mem.zip(uncore.io.mem).foreach { case (outer, inner) =>
     TopUtils.connectNasti(outer, inner)
@@ -188,12 +191,14 @@ class Uncore(implicit val p: Parameters) extends Module
   val deviceTree = Module(new NastiROM(p(DeviceTree).toSeq))
   deviceTree.io <> outmemsys.io.deviceTree
 
+  val set_div = VLSIUtils.getClockDivCtrl(scrFile.io.scr)
+
   // Wire the htif to the memory port(s) and host interface
   io.host.debug_stats_csr := htif.io.host.debug_stats_csr
   io.mem <> outmemsys.io.mem
   if(p(UseHtifClockDiv)) {
     VLSIUtils.padOutHTIFWithDividedClock(
-      htif.io.host, scrFile.io.scr, io.host, htifW)
+      htif.io.host, io.host, set_div, htifW)
   } else {
     htif.io.host.out <> io.host.out
     htif.io.host.in <> io.host.in
@@ -201,7 +206,7 @@ class Uncore(implicit val p: Parameters) extends Module
 
   if (p(UseBackupMemoryPort)) {
     VLSIUtils.padOutBackupMemWithDividedClock(
-      outmemsys.io.mem_backup, scrFile.io.scr, io.mem_backup, memBackupW)
+      outmemsys.io.mem_backup, io.mem_backup, set_div, memBackupW)
   }
 }
 
