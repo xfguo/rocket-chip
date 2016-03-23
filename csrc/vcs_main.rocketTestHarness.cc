@@ -3,12 +3,46 @@
 #include "htif_emulator.h"
 #include "mm.h"
 #include "mm_dramsim2.h"
+#ifdef VERILATOR
+#include "verilated.h"
+#include "VrocketTestHarness.h"
+#else
 #include <DirectC.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
 #include <sstream>
 #include <iterator>
+#include <memory>
+
+#ifdef VERILATOR
+typedef unsigned char       vsim_bit_i;
+typedef unsigned char *     vsim_bit_o;
+typedef const svBitVecVal * vsim_vec_i;
+typedef svBitVecVal *       vsim_vec_o;
+
+int vc_getScalar(vsim_vec_i i) { return i[0]; }
+int vc_getScalar(vsim_bit_i i) { return i; }
+
+void vc_putScalar(vsim_bit_o o, int v) { o[0] = v; }
+void vc_putScalar(vsim_vec_o o, int v) { o[0] = v; }
+
+struct vec32 {
+  unsigned int c;
+  unsigned int d;
+};
+struct vec32* vc_4stVectorRef(vsim_vec_i i)
+{ return (struct vec32 *)i; }
+
+void vc_put4stVector(vsim_vec_o o, vec32* v)
+{ o[0] = v->d; o[1] = v->c; }
+#else
+typedef vc_handle vsim_bit_i;
+typedef vc_handle vsim_bit_o;
+typedef vc_handle vsim_vec_i;
+typedef vc_handle vsim_vec_o;
+#endif
 
 extern "C" {
 
@@ -21,7 +55,7 @@ static const char* loadmem;
 static bool dramsim = false;
 static int memory_channel_mux_select = 0;
 
-void htif_fini(vc_handle failure)
+void htif_fini(vsim_vec_i failure)
 {
   delete htif;
   htif = NULL;
@@ -54,44 +88,55 @@ int main(int argc, char** argv)
     load_mem(mems, loadmem, CACHE_BLOCK_BYTES, N_MEM_CHANNELS);
   }
 
+#ifdef VERILATOR
+  Verilated::commandArgs(argc, argv);
+  {
+    auto dut = new VrocketTestHarness;
+    while (!Verilated::gotFinish())
+      dut->eval();
+    delete dut;
+    exit(0);
+  }
+#else
   vcs_main(argc, argv);
   abort(); // should never get here
+#endif
 }
 
 void memory_tick(
-  vc_handle channel,
+  vsim_vec_i channel,
 
-  vc_handle ar_valid,
-  vc_handle ar_ready,
-  vc_handle ar_addr,
-  vc_handle ar_id,
-  vc_handle ar_size,
-  vc_handle ar_len,
+  vsim_bit_i ar_valid,
+  vsim_bit_o ar_ready,
+  vsim_vec_i ar_addr,
+  vsim_vec_i ar_id,
+  vsim_vec_i ar_size,
+  vsim_vec_i ar_len,
 
-  vc_handle aw_valid,
-  vc_handle aw_ready,
-  vc_handle aw_addr,
-  vc_handle aw_id,
-  vc_handle aw_size,
-  vc_handle aw_len,
+  vsim_bit_i aw_valid,
+  vsim_bit_o aw_ready,
+  vsim_vec_i aw_addr,
+  vsim_vec_i aw_id,
+  vsim_vec_i aw_size,
+  vsim_vec_i aw_len,
 
-  vc_handle w_valid,
-  vc_handle w_ready,
-  vc_handle w_strb,
-  vc_handle w_data,
-  vc_handle w_last,
+  vsim_bit_i w_valid,
+  vsim_bit_o w_ready,
+  vsim_vec_i w_strb,
+  vsim_vec_i w_data,
+  vsim_bit_i w_last,
 
-  vc_handle r_valid,
-  vc_handle r_ready,
-  vc_handle r_resp,
-  vc_handle r_id,
-  vc_handle r_data,
-  vc_handle r_last,
+  vsim_bit_o r_valid,
+  vsim_bit_i r_ready,
+  vsim_vec_o r_resp,
+  vsim_vec_o r_id,
+  vsim_vec_o r_data,
+  vsim_bit_o r_last,
 
-  vc_handle b_valid,
-  vc_handle b_ready,
-  vc_handle b_resp,
-  vc_handle b_id)
+  vsim_bit_o b_valid,
+  vsim_bit_i b_ready,
+  vsim_vec_o b_resp,
+  vsim_vec_o b_id)
 {
   int c = vc_4stVectorRef(channel)->d;
   assert(c < N_MEM_CHANNELS);
@@ -174,13 +219,13 @@ void memory_tick(
 
 void htif_tick
 (
-  vc_handle htif_in_valid,
-  vc_handle htif_in_ready,
-  vc_handle htif_in_bits,
-  vc_handle htif_out_valid,
-  vc_handle htif_out_ready,
-  vc_handle htif_out_bits,
-  vc_handle exit
+  vsim_bit_o htif_in_valid,
+  vsim_bit_i htif_in_ready,
+  vsim_vec_o htif_in_bits,
+  vsim_bit_i htif_out_valid,
+  vsim_bit_o htif_out_ready,
+  vsim_vec_i htif_out_bits,
+  vsim_vec_o exit
 )
 {
   static bool peek_in_valid;

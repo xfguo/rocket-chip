@@ -240,6 +240,17 @@ object TestBenchGeneration extends FileSystemUtilities {
     val ticks = (0 until nMemChannel) map { i => s"""
   reg [31:0] channel_$i = $i;
 
+  wire dpi_ar_ready_$i;
+  wire dpi_aw_ready_$i;
+  wire dpi_w_ready_$i;
+  wire dpi_r_valid_$i;
+  wire [1:0] dpi_r_resp_$i;
+  wire [`MIF_TAG_BITS-1:0] dpi_r_id_$i;
+  wire [`MIF_DATA_BITS-1:0] dpi_r_data_$i;
+  wire dpi_b_valid_$i;
+  wire [1:0] dpi_b_resp_$i;
+  wire [`MIF_TAG_BITS-1:0] dpi_b_id_$i;
+
   always @(posedge clk)
   begin
     if (reset || r_reset)
@@ -261,12 +272,22 @@ object TestBenchGeneration extends FileSystemUtilities {
       memory_tick
       (
         channel_$i,
-        ar_valid_$i, ar_ready_$i, ar_addr_$i, ar_id_$i, ar_size_$i, ar_len_$i,
-        aw_valid_$i, aw_ready_$i, aw_addr_$i, aw_id_$i, aw_size_$i, aw_len_$i,
-        w_valid_$i, w_ready_$i, w_strb_$i, w_data_$i, w_last_$i,
-        r_valid_$i, r_ready_$i, r_resp_$i, r_id_$i, r_data_$i, r_last_$i,
-        b_valid_$i, b_ready_$i, b_resp_$i, b_id_$i
+        ar_valid_$i, dpi_ar_ready_$i, ar_addr_$i, ar_id_$i, ar_size_$i, ar_len_$i,
+        aw_valid_$i, dpi_aw_ready_$i, aw_addr_$i, aw_id_$i, aw_size_$i, aw_len_$i,
+        w_valid_$i, dpi_w_ready_$i, w_strb_$i, w_data_$i, w_last_$i,
+        dpi_r_valid_$i, r_ready_$i, dpi_r_resp_$i, dpi_r_id_$i, dpi_r_data_$i, r_last_$i,
+        dpi_b_valid_$i, b_ready_$i, dpi_b_resp_$i, dpi_b_id_$i
       );
+
+      ar_ready_$i <= dpi_ar_ready_$i;
+      aw_ready_$i <= dpi_aw_ready_$i;
+      w_ready_$i  <= dpi_w_ready_$i;
+      r_valid_$i  <= dpi_r_valid_$i;
+      r_id_$i     <= dpi_r_id_$i;
+      r_data_$i   <= dpi_r_data_$i;
+      b_valid_$i  <= dpi_b_valid_$i;
+      b_resp_$i   <= dpi_b_resp_$i;
+      b_id_$i     <= dpi_b_id_$i;
     end
   end
 

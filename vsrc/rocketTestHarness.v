@@ -1,5 +1,58 @@
 // See LICENSE for license details.
 
+`ifdef VERILATOR
+import "DPI-C" function void htif_fini(input bit [31:0] failure);
+
+import "DPI-C" function void htif_tick
+(
+  output bit                    htif_in_valid,
+  input  bit                    htif_in_ready,
+  output bit  [`HTIF_WIDTH-1:0] htif_in_bits,
+
+  input  bit                    htif_out_valid,
+  output bit                    htif_out_ready,
+  input  bit  [`HTIF_WIDTH-1:0] htif_out_bits,
+
+  output bit  [31:0]            exit
+);
+
+import "DPI-C" function void memory_tick
+(
+  input  bit [31:0]               channel,
+
+  input  bit                      ar_valid,
+  output bit                      ar_ready,
+  input  bit [`MEM_ADDR_BITS-1:0] ar_addr,
+  input  bit [`MEM_ID_BITS-1:0]   ar_id,
+  input  bit [2:0]                ar_size,
+  input  bit [7:0]                ar_len,
+
+  input  bit                      aw_valid,
+  output bit                      aw_ready,
+  input  bit [`MEM_ADDR_BITS-1:0] aw_addr,
+  input  bit [`MEM_ID_BITS-1:0]   aw_id,
+  input  bit [2:0]                aw_size,
+  input  bit [7:0]                aw_len,
+
+  input  bit                      w_valid,
+  output bit                      w_ready,
+  input  bit [`MEM_STRB_BITS-1:0] w_strb,
+  input  bit [`MEM_DATA_BITS-1:0] w_data,
+  input  bit                      w_last,
+
+  output bit                      r_valid,
+  input  bit                      r_ready,
+  output bit [1:0]                r_resp,
+  output bit [`MEM_ID_BITS-1:0]   r_id,
+  output bit [`MEM_DATA_BITS-1:0] r_data,
+  output bit                      r_last,
+
+  output bit                      b_valid,
+  input  bit                      b_ready,
+  output bit [1:0]                b_resp,
+  output bit [`MEM_ID_BITS-1:0]   b_id
+);
+`else
 extern "A" void htif_fini(input reg failure);
 
 extern "A" void htif_tick
@@ -51,11 +104,16 @@ extern "A" void memory_tick
   output reg [1:0]                b_resp,
   output reg [`MEM_ID_BITS-1:0]   b_id
 );
+`endif
 
 module rocketTestHarness;
 
   reg [31:0] seed;
+`ifdef VERILATOR
+  initial seed = 0;
+`else
   initial seed = $get_initial_random_seed();
+`endif
 
   //-----------------------------------------------
   // Instantiate the processor
@@ -93,6 +151,11 @@ module rocketTestHarness;
   wire htif_in_ready_premux = htif_in_ready;
   reg [31:0] exit = 0;
 
+  wire [31:0] dpi_exit;
+  wire dpi_htif_out_ready;
+  wire dpi_htif_in_ready_premux;
+  wire dpi_htif_in_valid_premux;
+
   always @(posedge htif_clk)
   begin
     if (reset || r_reset)
@@ -105,14 +168,18 @@ module rocketTestHarness;
     begin
       htif_tick
       (
-        htif_in_valid_premux,
-        htif_in_ready_premux,
+        dpi_htif_in_valid_premux,
+        dpi_htif_in_ready_premux,
         htif_in_bits_premux,
         htif_out_valid,
-        htif_out_ready,
+        dpi_htif_out_ready,
         htif_out_bits,
-        exit
+        dpi_exit
       );
+      exit <= dpi_exit;
+      htif_out_ready <= dpi_htif_out_ready;
+      htif_in_ready_premux <= dpi_htif_in_ready_premux;
+      htif_in_valid_premux <= dpi_htif_in_valid_premux;
     end
   end
 
@@ -122,7 +189,7 @@ module rocketTestHarness;
   // Read input arguments and initialize
   initial
   begin
-    $value$plusargs("max-cycles=%d", max_cycles);
+    if ($value$plusargs("max-cycles=%d", max_cycles) !== 1) $stop;
 `ifdef MEM_BACKUP_EN
     $value$plusargs("loadmem=%s", loadmem);
     if (loadmem)

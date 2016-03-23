@@ -28,6 +28,30 @@ verilog: $(sim_vsrcs)
 # Build rules
 #--------------------------------------------------------------------
 
+VERILOG_SIMULATOR ?= verilator
+
+ifeq ($(VERILOG_SIMULATOR),verilator)
+VCS = verilator --cc --exe
+
+VCS_OPTS = --top-module $(TB) \
+	-CFLAGS "-I$(RISCV)/include" \
+	-CFLAGS "-I$(realpath $(base_dir))/dramsim2" \
+	-CFLAGS "-std=c++11" \
+	-CFLAGS "-Wl,-rpath,$(RISCV)/lib" \
+	-CFLAGS "-include $(consts_header)" \
+	-CFLAGS "-include $(scr_header)" \
+	-CFLAGS "-DVERILATOR" \
+	$(RISCV)/lib/libfesvr.so \
+	$(abspath $(sim_dir)/libdramsim.a) \
+	+incdir+$(generated_dir) \
+	+define+CLOCK_PERIOD=0.5 \
+	+define+PRINTF_COND=$(TB).verbose \
+	+libext+.v \
+	-Wno-UNSIGNED -Wno-COMBDLY -Wno-MULTIDRIVEN -Wno-WIDTH -Wno-STMTDLY -Wno-SELRANGE -Wno-IMPLICIT \
+	 $(sim_vsrcs) $(sim_csrcs)
+
+VCS_OPTS_DEBUG = +define+DEBUG
+else ifeq ($(VERILOG_SIMULATOR),vcs)
 VCS = vcs -full64
 
 VCS_OPTS = -notice -line +lint=all,noVCDE,noONGS,noUI -error=PCWM-L -timescale=1ns/10ps -quiet \
@@ -46,6 +70,12 @@ VCS_OPTS = -notice -line +lint=all,noVCDE,noONGS,noUI -error=PCWM-L -timescale=1
 	+define+CLOCK_PERIOD=0.5 $(sim_vsrcs) $(sim_csrcs) \
 	+define+PRINTF_COND=$(TB).printf_cond \
 	+libext+.v \
+	-debug_pp
+
+VCS_OPTS_DEBUG = +define+DEBUG
+else
+$(error Unsupport VERILOG_SIMULATOR=$(VERILOG_SIMULATOR))
+endif
 
 #--------------------------------------------------------------------
 # Build the simulator
@@ -55,15 +85,15 @@ simv = $(sim_dir)/simv-$(MODEL)-$(CONFIG)
 $(simv) : $(sim_vsrcs) $(sim_csrcs) $(sim_dir)/libdramsim.a $(consts_header)
 	cd $(sim_dir) && \
 	rm -rf csrc && \
-	$(VCS) $(VCS_OPTS) -o $(simv) \
-	-debug_pp \
+	$(VCS) $(VCS_OPTS) -o $(abspath $(simv))
+	$(MAKE) -C obj_dir -f V$(TB).mk
 
 simv_debug = $(sim_dir)/simv-$(MODEL)-$(CONFIG)-debug
 $(simv_debug) : $(sim_vsrcs) $(sim_csrcs) $(sim_dir)/libdramsim.a $(consts_header)
 	cd $(sim_dir) && \
 	rm -rf csrc && \
-	$(VCS) $(VCS_OPTS) -o $(simv_debug) \
-	+define+DEBUG -debug_pp \
+	$(VCS) $(VCS_OPTS) $(VCS_OPTS_DEBUG) -o $(abspath $(simv_debug))
+	$(MAKE) -C obj_dir -f V$(TB).mk
 
 #--------------------------------------------------------------------
 # Run
