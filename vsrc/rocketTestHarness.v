@@ -123,6 +123,7 @@ module rocketTestHarness;
   reg r_reset;
   reg start = 1'b0;
 
+  /* verilator lint_off STMTDLY */
   always #`CLOCK_PERIOD clk = ~clk;
 
   reg [  31:0] n_mem_channel = `N_MEM_CHANNELS;
@@ -133,6 +134,7 @@ module rocketTestHarness;
   reg [1023:0] loadmem = 0;
   reg [1023:0] vcdplusfile = 0;
   reg [1023:0] vcdfile = 0;
+  reg   [31:0] wide_verbose;
   reg          verbose = 0;
   wire         printf_cond = verbose && !reset;
   integer      stderr = 32'h80000002;
@@ -195,7 +197,8 @@ module rocketTestHarness;
     if (loadmem)
       $readmemh(loadmem, mem.ram);
 `endif
-    verbose = $test$plusargs("verbose");
+    wide_verbose = $test$plusargs("verbose");
+    verbose = wide_verbose[0];
 `ifdef DEBUG
     if ($value$plusargs("vcdplusfile=%s", vcdplusfile))
     begin
@@ -228,17 +231,17 @@ module rocketTestHarness;
     if (exit > 1)
       $sformat(reason, "tohost = %d", exit >> 1);
 
-    if (reason)
+    if (reason != 256'b0)
     begin
       $fdisplay(stderr, "*** FAILED *** (%s) after %d simulation cycles", reason, trace_count);
       `VCDPLUSCLOSE
-      htif_fini(1'b1);
+      htif_fini(32'b1);
     end
 
     if (exit == 1)
     begin
       `VCDPLUSCLOSE
-      htif_fini(1'b0);
+      htif_fini(32'b0);
     end
   end
 

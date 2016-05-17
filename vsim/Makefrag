@@ -41,13 +41,13 @@ VCS_OPTS = --top-module $(TB) \
 	-CFLAGS "-include $(consts_header)" \
 	-CFLAGS "-include $(scr_header)" \
 	-CFLAGS "-DVERILATOR" \
+	-CFLAGS "-g" \
 	$(RISCV)/lib/libfesvr.so \
 	$(abspath $(sim_dir)/libdramsim.a) \
 	+incdir+$(generated_dir) \
 	+define+CLOCK_PERIOD=0.5 \
 	+define+PRINTF_COND=$(TB).verbose \
 	+libext+.v \
-	-Wno-UNSIGNED -Wno-COMBDLY -Wno-MULTIDRIVEN -Wno-WIDTH -Wno-STMTDLY -Wno-SELRANGE -Wno-IMPLICIT \
 	 $(sim_vsrcs) $(sim_csrcs)
 
 VCS_OPTS_DEBUG = +define+DEBUG
