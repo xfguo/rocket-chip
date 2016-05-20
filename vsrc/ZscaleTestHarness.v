@@ -7,28 +7,22 @@ module ZscaleTestHarness;
 
   always #`CLOCK_PERIOD clk = ~clk;
 
-  wire        csr_resp_valid;
-  wire [31:0] dummy;
-  wire [31:0] csr_resp_bits;
-
   ZscaleTop dut
   (
     .clk(clk),
     .reset(reset),
-    .io_host_reset(reset),
 
-    .io_host_id(1'd0),
-    .io_host_csr_req_ready(),
-    .io_host_csr_req_valid(1'b1),
-    .io_host_csr_req_bits_rw(1'b0),
-    .io_host_csr_req_bits_addr(12'h780), // tohost register
-    .io_host_csr_req_bits_data({dummy, 32'd0}),
-    .io_host_csr_resp_ready(1'b1),
-    .io_host_csr_resp_valid(csr_resp_valid),
-    .io_host_csr_resp_bits({dummy, csr_resp_bits})
+    .io_prci_reset(reset),
+    .io_prci_id(1'd0),
+    .io_prci_interrupts_mtip(1'b0),
+    .io_prci_interrupts_msip(1'b0),
+    .io_prci_interrupts_meip(1'b0),
+    .io_prci_interrupts_seip(1'b0),
+    .io_prci_interrupts_debug(1'b0)
   );
 
   reg [1023:0] loadmem = 0;
+  reg [1023:0] prog = 0;
   reg [1023:0] vcdplusfile = 0;
   reg [  63:0] max_cycles = 0;
   reg [  63:0] trace_count = 0;
@@ -37,6 +31,8 @@ module ZscaleTestHarness;
   integer      stderr = 32'h80000002;
   integer      i;
   reg [127:0]  image [8191:0];
+  reg [7:0]  dmem [65535:0];
+  reg [31:0] tohost;
 
   initial
   begin
@@ -53,6 +49,11 @@ module ZscaleTestHarness;
       $vcdplusmemon(0);
     end
 
+    if ($value$plusargs("prog=%s", prog))
+    begin
+      $readmemh(prog, dmem);
+    end
+
     #0.5;
     for (i=0; i<`BOOT_CAPACITY/16; i=i+1) begin
       dut.bootmem.ram.ram[4*i+0] = image[i][31:0];
@@ -61,6 +62,15 @@ module ZscaleTestHarness;
       dut.bootmem.ram.ram[4*i+3] = image[i][127:96];
     end
 
+    #0.5;
+    // TODO: use DRAM_CAPCITY here.
+    for (i=0; i<65536/4; i=i+4) begin
+      dut.dram.ram.ram[i/4] = {
+        dmem[i + 3],
+        dmem[i + 2],
+        dmem[i + 1],
+	dmem[i + 0]};
+    end
     #777.7 reset = 0;
   end
 
@@ -74,10 +84,11 @@ module ZscaleTestHarness;
 
     if (!reset)
     begin
-      if (csr_resp_valid && csr_resp_bits > 1)
-        $sformat(reason, "tohost = %d", csr_resp_bits >> 1);
+      tohost = dut.dram.ram.ram['h1000/4];
+      if (tohost & 1)
+        $sformat(reason, "tohost = %d", tohost >> 1);
 
-      if (csr_resp_valid && csr_resp_bits == 1)
+      if (tohost == 'd1)
       begin
         $vcdplusclose;
         $finish;
@@ -91,5 +102,4 @@ module ZscaleTestHarness;
       $finish;
     end
   end
-
 endmodule
