@@ -14,6 +14,31 @@ case object BuildZscale extends Field[(Bool, Parameters) => Zscale]
 case object BootROMCapacity extends Field[Int]
 case object DRAMCapacity extends Field[Int]
 
+object ZscaleTopUtils {
+  def makeBootROM()(implicit p: Parameters) = {
+    val rom = java.nio.ByteBuffer.allocate(32)
+    rom.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+
+    // for now, have the reset vector jump straight to memory
+    val addrHashMap = p(GlobalAddrHashMap)
+    val resetToMemDist = addrHashMap("mem").start
+    require(resetToMemDist.toInt == (resetToMemDist.toInt >> 12 << 12))
+    // TODO: zscale reset vector is 0x200
+    val configStringAddr = Integer.parseInt("200", 16) + rom.capacity
+
+    rom.putInt(0x000002b7 + resetToMemDist.toInt) // lui t0, &mem
+    rom.putInt(0x00028067)                        // jr t0
+    rom.putInt(0)                                 // reserved
+    rom.putInt(configStringAddr)                  // pointer to config string
+    rom.putInt(0)                                 // default trap vector
+    rom.putInt(0)                                 //   ...
+    rom.putInt(0)                                 //   ...
+    rom.putInt(0)                                 //   ...
+
+    rom.array() ++ p(ConfigString).toSeq
+  }
+}
+
 class ZscaleSystem(implicit p: Parameters)  extends Module {
   val io = new Bundle {
     val prci = new PRCITileIO().flip
@@ -68,7 +93,7 @@ class ZscaleTop(topParams: Parameters) extends Module {
   }
 
   val sys = Module(new ZscaleSystem)
-  val bootmem = Module(new HastiSRAM(p(BootROMCapacity)/4))
+  val bootmem = Module(new HastiROM(ZscaleTopUtils.makeBootROM()))
   val dram = Module(new HastiSRAM(p(DRAMCapacity)/4))
 
   sys.io.prci <> io.prci

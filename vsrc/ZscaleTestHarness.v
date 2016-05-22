@@ -53,17 +53,9 @@ module ZscaleTestHarness;
     begin
       $readmemh(prog, dmem);
     end
-
+    
     #0.5;
-    for (i=0; i<`BOOT_CAPACITY/16; i=i+1) begin
-      dut.bootmem.ram.ram[4*i+0] = image[i][31:0];
-      dut.bootmem.ram.ram[4*i+1] = image[i][63:32];
-      dut.bootmem.ram.ram[4*i+2] = image[i][95:64];
-      dut.bootmem.ram.ram[4*i+3] = image[i][127:96];
-    end
-
-    #0.5;
-    // TODO: use DRAM_CAPCITY here.
+    // TODO: use C++ program to load the program
     for (i=0; i<65536/4; i=i+4) begin
       dut.dram.ram.ram[i/4] = {
         dmem[i + 3],
@@ -71,6 +63,7 @@ module ZscaleTestHarness;
         dmem[i + 1],
 	dmem[i + 0]};
     end
+
     #777.7 reset = 0;
   end
 
