@@ -48,36 +48,8 @@ object ZscaleTopUtils {
   }
 }
 
-class HastiMasterIOData64to32Converter(implicit p: Parameters) extends HastiModule()(p) {
-  val io = new Bundle {
-    val in = new HastiMasterIO()(p.alterPartial({case hastiDataBits => 64})).flip
-    val out = new HastiMasterIO()(p.alterPartial({case hastiDataBits => 64}))
-  }
-  val sz64 = Wire(init = Bool(false))
-
-  io.out.haddr     := io.in.haddr    
-  io.out.hwrite    := io.in.hwrite   
-  io.out.hsize     := Mux(sz64, UInt(2), io.in.hsize)
-  io.out.hburst    := io.in.hburst   
-  io.out.hprot     := io.in.hprot    
-  io.out.htrans    := io.in.htrans   
-  io.out.hmastlock := io.in.hmastlock
-
-  sz64 := (io.in.hsize === UInt(3))
-
-  io.out.hwdata    := Mux(
-    io.in.haddr(2) === UInt(1),
-    io.in.hwdata(63,32),
-    io.in.hwdata(31,0))
-
-  io.in.hrdata := Cat(io.out.hrdata, io.out.hrdata)
-  io.in.hready := io.out.hready
-  io.in.hresp  := io.out.hresp
-}
-
 class ZscaleSystem(implicit p: Parameters)  extends Module {
   val io = new Bundle {
-    val prci = new PRCITileIO().flip
     val host = new HostIO(p(HtifKey).width)
     val jtag = new HastiMasterIO().flip
     val bootmem = new HastiSlaveIO().flip
@@ -87,9 +59,11 @@ class ZscaleSystem(implicit p: Parameters)  extends Module {
     val corereset = new PociIO
   }
 
-  val core = p(BuildZscale)(io.prci.reset, p)
 
   val htif = Module(new HtifZ(CSRs.mreset))
+  val htif_cpu_reset = Reg(next=Reg(next=htif.io.cpu(0).reset))
+  
+  val core = p(BuildZscale)(htif_cpu_reset, p)
   
   io.host <> htif.io.host
   
@@ -104,7 +78,7 @@ class ZscaleSystem(implicit p: Parameters)  extends Module {
 
   val pbus_afn = (addr: UInt) => addr(31) === UInt(1)
   val led_afn = (addr: UInt) => addr(31) === UInt(1) && addr(30, 10) === UInt(0)
-  val corereset_afn = (addr: UInt) => addr(31) === UInt(1) && addr(30, 10) === UInt(1)
+  val corereset_afn = (addr: UInt) => addr(31) === UInt(1) && addr(30, 10) === UInt(1) /* TODO: do we need this? */
 
   val xbar = Module(new HastiXbar(3, Seq(bootmem_afn, sbus_afn)))
   val sadapter = Module(new HastiSlaveToMaster)
@@ -112,7 +86,13 @@ class ZscaleSystem(implicit p: Parameters)  extends Module {
   val padapter = Module(new HastiToPociBridge)
   val pbus = Module(new PociBus(Seq(led_afn, corereset_afn)))
 
-  core.io.prci <> io.prci
+  /* TODO: just follow rocketChip */
+  core.io.prci.id := UInt(0)
+  core.io.prci.interrupts.mtip := Bool(false)  /* TODO */
+  core.io.prci.interrupts.meip := Bool(false)  /* TODO */
+  core.io.prci.interrupts.seip := Bool(false)  /* TODO */
+  core.io.prci.interrupts.debug := Bool(false)  /* TODO */
+  core.io.prci.reset := htif_cpu_reset // FIXME
   
   xbar.io.masters(0) <> htif.io.mem
   xbar.io.masters(1) <> core.io.dmem
@@ -136,16 +116,15 @@ class ZscaleSystem(implicit p: Parameters)  extends Module {
 class ZscaleTop(topParams: Parameters) extends Module {
   implicit val p = topParams.alterPartial({case TLId => "L1toL2" })
   val io = new Bundle {
-    val prci = new PRCITileIO().flip
     val host = new HostIO(p(HtifKey).width)
   }
 
   val sys = Module(new ZscaleSystem)
   val bootmem = Module(new HastiROM(ZscaleTopUtils.makeBootROM()))
-  val dram = Module(new HastiSRAM(p(DRAMCapacity)/4))
+  val dram = Module(new HastiRAM(p(DRAMCapacity)/4))
 
-  sys.io.prci <> io.prci
   sys.io.host <> io.host
   bootmem.io <> sys.io.bootmem
   dram.io <> sys.io.dram
+  
 }

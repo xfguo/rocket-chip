@@ -52,14 +52,6 @@ module ZscaleTestHarness;
     .clk(clk),
     .reset(reset),
 
-    .io_prci_reset(reset),
-    .io_prci_id(1'd0),
-    .io_prci_interrupts_mtip(1'b0),
-    .io_prci_interrupts_msip(1'b0),
-    .io_prci_interrupts_meip(1'b0),
-    .io_prci_interrupts_seip(1'b0),
-    .io_prci_interrupts_debug(1'b0),
-
     .io_host_clk(/*FIXME: htif_clk*/),
     .io_host_clk_edge(),
     .io_host_in_valid(htif_in_valid_delay),
@@ -143,17 +135,6 @@ module ZscaleTestHarness;
       $readmemh(prog, dmem);
     end
     
-    #0.5;
-/*
-    // TODO: use C++ to load the program
-    for (i=0; i<65536/4; i=i+4) begin
-      dut.dram.ram.ram[i/4] = {
-        dmem[i + 3],
-        dmem[i + 2],
-        dmem[i + 1],
-	dmem[i + 0]};
-    end
-*/
     #777.7 reset = 0;
   end
 
@@ -178,7 +159,7 @@ module ZscaleTestHarness;
       end
     end
 
-    if (reason)
+    if (0 && reason)
     begin
       $fdisplay(stderr, "*** FAILED *** (%s) after %d simulation cycles", reason, trace_count);
       $vcdplusclose;
