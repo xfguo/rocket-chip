@@ -278,13 +278,57 @@ trait PeripheryBootROMModule {
   } =>
 }
 
+///// On-Chip RAM 1
+
+trait PeripheryOnChipRAM1 {
+  this: TopNetwork =>
+
+  val testram2 = LazyModule(new TLRAM(AddressSet(0x52000000, 0x1ffff), true, peripheryBusConfig.beatBytes))
+  testram2.node := TLFragmenter(peripheryBusConfig.beatBytes, cacheBlockBytes)(peripheryBus.node)
+}
+
+trait PeripheryOnChipRAM1Bundle {
+  this: TopNetworkBundle {
+    val outer: PeripheryOnChipRAM1
+  } =>
+}
+
+trait PeripheryOnChipRAM1Module {
+  this: TopNetworkModule {
+    val outer: PeripheryOnChipRAM1
+    val io: PeripheryOnChipRAM1Bundle
+  } =>
+}
+
+///// On-Chip RAM 2
+
+trait PeripheryOnChipRAM2 {
+  this: TopNetwork =>
+
+  val testram = LazyModule(new TLRAM(AddressSet(0x52020000, 0xffff), true, peripheryBusConfig.beatBytes))
+  testram.node := TLFragmenter(peripheryBusConfig.beatBytes, cacheBlockBytes)(peripheryBus.node)
+}
+
+trait PeripheryOnChipRAM2Bundle {
+  this: TopNetworkBundle {
+    val outer: PeripheryOnChipRAM2
+  } =>
+}
+
+trait PeripheryOnChipRAM2Module {
+  this: TopNetworkModule {
+    val outer: PeripheryOnChipRAM2
+    val io: PeripheryOnChipRAM2Bundle
+  } =>
+}
+
 /////
 
 trait PeripheryTestRAM {
   this: TopNetwork =>
 
-  val testram = LazyModule(new TLRAM(AddressSet(0x52000000, 0xfff), true, peripheryBusConfig.beatBytes))
-  testram.node := TLFragmenter(peripheryBusConfig.beatBytes, cacheBlockBytes)(peripheryBus.node)
+  val testram1 = LazyModule(new TLRAM(AddressSet(0x52000000, 0x3ffff), true, peripheryBusConfig.beatBytes))
+  testram1.node := TLFragmenter(peripheryBusConfig.beatBytes, cacheBlockBytes)(peripheryBus.node)
 }
 
 trait PeripheryTestRAMBundle {

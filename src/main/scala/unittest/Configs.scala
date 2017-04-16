@@ -26,13 +26,7 @@ class WithUncoreUnitTests extends Config(
   (pname, site, here) => pname match {
     case uncore.tilelink.TLId => "L1toL2"
     case UnitTests => (p: Parameters) => Seq(
-      Module(new uncore.devices.ROMSlaveTest()(p)),
-      Module(new uncore.devices.TileLinkRAMTest()(p)),
-      Module(new uncore.converters.TileLinkWidthAdapterTest()(p)),
-      Module(new uncore.tilelink2.TLFuzzRAMTest),
-      Module(new uncore.axi4.AXI4LiteFuzzRAMTest),
-      Module(new uncore.axi4.AXI4FullFuzzRAMTest),
-      Module(new uncore.axi4.AXI4BridgeTest))
+      Module(new uncore.axi4.AXI4FullFuzzRAMTest))
     case _ => throw new CDEMatchError
   }
 )
